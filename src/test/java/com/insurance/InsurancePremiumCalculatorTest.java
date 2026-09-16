@@ -1,52 +1,26 @@
 package com.insurance;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class InsurancePremiumCalculatorTest {
+class InsurancePremiumCalculatorTest {
 
-    @Test
-    void shouldGive10PercentDiscountForAge65() {
-
-        InsurancePremiumCalculator calculator =
-                new InsurancePremiumCalculator();
-
-        double result = calculator.calculatePremium(65, 10000);
-
-        assertEquals(9000, result);
-    }
-
-    @Test
-    void shouldGive10PercentDiscountForAge60() {
+    @ParameterizedTest
+    @CsvSource({
+        "65, 10000, 9000",
+        "60, 10000, 9000",
+        "59, 10000, 10000",
+        "30, 10000, 10000"
+    })
+    void shouldCalculatePremiumCorrectly(int age, double basePremium, double expectedPremium) {
 
         InsurancePremiumCalculator calculator =
                 new InsurancePremiumCalculator();
 
-        double result = calculator.calculatePremium(60, 10000);
+        double result = calculator.calculatePremium(age, basePremium);
 
-        assertEquals(9000, result);
-    }
-
-    @Test
-    void shouldNotGiveDiscountForAge59() {
-
-        InsurancePremiumCalculator calculator =
-                new InsurancePremiumCalculator();
-
-        double result = calculator.calculatePremium(59, 10000);
-
-        assertEquals(10000, result);
-    }
-
-    @Test
-    void shouldNotGiveDiscountForAge30() {
-
-        InsurancePremiumCalculator calculator =
-                new InsurancePremiumCalculator();
-
-        double result = calculator.calculatePremium(30, 10000);
-
-        assertEquals(10000, result);
+        assertEquals(expectedPremium, result);
     }
 }
