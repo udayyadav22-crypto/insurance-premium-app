@@ -62,7 +62,7 @@ jobs:
   # ==========================================
   deploy-to-ec2:
 
-    # Deploy only after a successful main branch push
+    # Deploy only on main branch push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     needs: build-and-test
@@ -118,14 +118,31 @@ jobs:
           nohup java -jar insurance-premium-app-1.0.0.jar \
             > application.log 2>&1 &
 
+          echo "Waiting for application startup..."
+
           sleep 5
 
-          echo "Checking application..."
+          echo "Checking application process..."
 
           if pgrep -f '[i]nsurance-premium-app-1.0.0.jar' > /dev/null; then
-            echo "Application started successfully."
+            echo "Application process is running."
           else
             echo "Application failed to start."
+            echo "----- Application Log -----"
+            tail -n 50 application.log
+            exit 1
+          fi
+
+          echo "Running production sanity check..."
+
+          HEALTH_RESPONSE=$(curl -s http://localhost:8080/health)
+
+          echo "Health response: $HEALTH_RESPONSE"
+
+          if [ "$HEALTH_RESPONSE" = "OK" ]; then
+            echo "Production sanity check PASSED."
+          else
+            echo "Production sanity check FAILED."
             echo "----- Application Log -----"
             tail -n 50 application.log
             exit 1
