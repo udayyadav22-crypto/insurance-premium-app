@@ -25,3 +25,13 @@ jobs:
 
       - name: Build and run tests
         run: mvn clean test
+
+      - name: SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn verify sonar:sonar \
+            -Dsonar.organization=udayyadav22-crypto \
+            -Dsonar.projectKey=udayyadav22-crypto_insurance-premium-app \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=${SONAR_TOKEN}
