@@ -1,14 +1,19 @@
-name: Insurance Premium CI
+name: Insurance Premium CI-CD
 
 on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
 
 jobs:
+
+  # ==========================================
+  # CI - Build, Test, SonarCloud, Artifact
+  # ==========================================
   build-and-test:
 
     runs-on: ubuntu-latest
@@ -43,10 +48,89 @@ jobs:
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-      # 5. Upload executable JAR as GitHub Actions artifact
+      # 5. Upload executable JAR
       - name: Upload application JAR
         uses: actions/upload-artifact@v4
         with:
           name: insurance-premium-app
           path: target/insurance-premium-app-1.0.0.jar
           if-no-files-found: error
+
+
+  # ==========================================
+  # CD - Deploy to AWS EC2
+  # ==========================================
+  deploy-to-ec2:
+
+    # Deploy only after a successful main branch push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    needs: build-and-test
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Download JAR artifact
+      - name: Download application artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: insurance-premium-app
+          path: deployment
+
+      # 2. Configure SSH
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/github_actions_ec2
+
+          chmod 600 ~/.ssh/github_actions_ec2
+
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      # 3. Copy JAR to EC2
+      - name: Copy JAR to EC2
+        run: |
+          scp \
+            -i ~/.ssh/github_actions_ec2 \
+            deployment/insurance-premium-app-1.0.0.jar \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/insurance-premium-app/
+
+      # 4. Deploy application
+      - name: Deploy application on EC2
+        run: |
+          ssh \
+            -i ~/.ssh/github_actions_ec2 \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+
+          cd /home/ubuntu/insurance-premium-app
+
+          echo "Stopping old application..."
+
+          if pgrep -f '[i]nsurance-premium-app-1.0.0.jar' > /dev/null; then
+            pkill -f '[i]nsurance-premium-app-1.0.0.jar'
+            sleep 2
+          fi
+
+          echo "Starting new application..."
+
+          nohup java -jar insurance-premium-app-1.0.0.jar \
+            > application.log 2>&1 &
+
+          sleep 5
+
+          echo "Checking application..."
+
+          if pgrep -f '[i]nsurance-premium-app-1.0.0.jar' > /dev/null; then
+            echo "Application started successfully."
+          else
+            echo "Application failed to start."
+            echo "----- Application Log -----"
+            tail -n 50 application.log
+            exit 1
+          fi
+
+          echo "Deployment completed successfully."
+
+          EOF
