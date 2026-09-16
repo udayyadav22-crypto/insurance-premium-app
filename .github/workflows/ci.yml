@@ -10,12 +10,16 @@ on:
 
 jobs:
   build-and-test:
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Checkout source code
       - name: Checkout source code
         uses: actions/checkout@v5
 
+      # 2. Setup Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -23,9 +27,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # 3. Build and run unit tests
       - name: Build and run tests
         run: mvn clean test
 
+      # 4. SonarCloud analysis
       - name: SonarCloud Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -34,4 +40,13 @@ jobs:
             -Dsonar.organization=udayyadav22-crypto \
             -Dsonar.projectKey=udayyadav22-crypto_insurance-premium-app \
             -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.token=${SONAR_TOKEN}
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+      # 5. Upload executable JAR as GitHub Actions artifact
+      - name: Upload application JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: insurance-premium-app
+          path: target/insurance-premium-app-1.0.0.jar
+          if-no-files-found: error
