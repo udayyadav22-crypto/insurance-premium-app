@@ -14,35 +14,32 @@ permissions:
 jobs:
 
   # ============================================================
-  # CI - Build, Unit Test, SonarCloud, SCA
+  # BUILD AND TEST
   # ============================================================
   build-and-test:
 
     runs-on: ubuntu-latest
 
-    env:
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-
     steps:
 
-      # Checkout source code
       - name: Checkout Code
         uses: actions/checkout@v5
 
-      # Setup Java 17
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
           cache: maven
 
-      # Build and Unit Tests
       - name: Build and Unit Test
-        run: mvn clean verify
+        run: |
+          mvn clean verify
 
-      # SonarCloud Analysis
-      - name: SonarCloud Scan
+      # ==========================================================
+      # SONARCLOUD CODE QUALITY
+      # ==========================================================
+      - name: SonarCloud Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -50,19 +47,27 @@ jobs:
             -Dsonar.projectKey=udayyadav22-crypto_insurance-premium-app \
             -Dsonar.organization=udayyadav22-crypto \
             -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.token=${SONAR_TOKEN}
+            -Dsonar.token="$SONAR_TOKEN"
 
-      # OWASP Dependency-Check - SCA
+      # ==========================================================
+      # OWASP DEPENDENCY CHECK - SCA
+      # ==========================================================
       - name: OWASP Dependency Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           mvn org.owasp:dependency-check-maven:check
 
-      # Package Application
+      # ==========================================================
+      # PACKAGE APPLICATION
+      # ==========================================================
       - name: Package Application
         run: |
           mvn package -DskipTests
 
-      # Upload JAR
+      # ==========================================================
+      # UPLOAD JAR ARTIFACT
+      # ==========================================================
       - name: Upload Application Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -71,24 +76,24 @@ jobs:
 
 
   # ============================================================
-  # UAT DEPLOYMENT
+  # DEPLOY TO UAT
   # ============================================================
   deploy-uat:
 
     needs: build-and-test
-
     runs-on: ubuntu-latest
 
     steps:
 
-      # Download JAR
       - name: Download Application Artifact
         uses: actions/download-artifact@v4
         with:
           name: insurance-premium-app
           path: artifact
 
-      # Configure SSH
+      # ==========================================================
+      # CONFIGURE SSH
+      # ==========================================================
       - name: Configure SSH
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
@@ -102,7 +107,9 @@ jobs:
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
             >> ~/.ssh/known_hosts
 
-      # Copy JAR to EC2
+      # ==========================================================
+      # COPY APPLICATION TO EC2
+      # ==========================================================
       - name: Copy Application to EC2
         run: |
           scp \
@@ -111,34 +118,43 @@ jobs:
             artifact/insurance-premium-app-1.0.0.jar \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/insurance-premium-app/
 
-      # Deploy UAT
+      # ==========================================================
+      # DEPLOY UAT
+      # ==========================================================
       - name: Deploy to UAT
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'cd /home/ubuntu/insurance-premium-app
 
-            cd /home/ubuntu/insurance-premium-app
+          if [ -f uat.pid ]; then
+            kill "$(cat uat.pid)" 2>/dev/null || true
+            rm -f uat.pid
+          fi
 
-            # Stop previous UAT instance only
-            if [ -f uat.pid ]; then
-              kill "$(cat uat.pid)" 2>/dev/null || true
-              rm -f uat.pid
-            fi
+          APP_PORT=8081 \
+          nohup java -jar insurance-premium-app-1.0.0.jar \
+            > application-uat.log 2>&1 &
 
-            # Start UAT on port 8081
-            APP_PORT=8081 \
-            nohup java -jar insurance-premium-app-1.0.0.jar \
-              > application-uat.log 2>&1 &
+          echo $! > uat.pid
 
-            echo $! > uat.pid
+          sleep 10
 
-            sleep 10
+          echo "UAT deployment completed"'
 
-            echo "UAT deployment completed"
-
-EOF
+      # ==========================================================
+      # UAT DEPLOYMENT VERIFICATION
+      # ==========================================================
+      - name: Verify UAT Deployment
+        run: |
+          ssh \
+            -i ~/.ssh/github_actions_ec2 \
+            -o IdentitiesOnly=yes \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'curl --fail http://localhost:8081/health && \
+             curl --fail http://localhost:8081/premium'
 
 
   # ============================================================
@@ -147,37 +163,13 @@ EOF
   uat-test:
 
     needs: deploy-uat
-
     runs-on: ubuntu-latest
 
     steps:
 
       - name: UAT API Test
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-
-          echo "Testing UAT Health endpoint..."
-
-          curl \
-            --fail \
-            --retry 5 \
-            --retry-delay 3 \
-            http://${EC2_HOST}:8081/health
-
-          echo ""
-
-          echo "Testing UAT Premium endpoint..."
-
-          curl \
-            --fail \
-            --retry 5 \
-            --retry-delay 3 \
-            http://${EC2_HOST}:8081/premium
-
-          echo ""
-
-          echo "UAT API tests passed"
+          echo "UAT API validation completed successfully."
 
 
   # ============================================================
@@ -186,7 +178,6 @@ EOF
   deploy-production:
 
     needs: uat-test
-
     runs-on: ubuntu-latest
 
     environment:
@@ -194,14 +185,15 @@ EOF
 
     steps:
 
-      # Download JAR
       - name: Download Application Artifact
         uses: actions/download-artifact@v4
         with:
           name: insurance-premium-app
           path: artifact
 
-      # Configure SSH
+      # ==========================================================
+      # CONFIGURE SSH
+      # ==========================================================
       - name: Configure SSH
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
@@ -215,7 +207,9 @@ EOF
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
             >> ~/.ssh/known_hosts
 
-      # Copy JAR
+      # ==========================================================
+      # COPY APPLICATION TO EC2
+      # ==========================================================
       - name: Copy Application to EC2
         run: |
           scp \
@@ -224,70 +218,42 @@ EOF
             artifact/insurance-premium-app-1.0.0.jar \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/insurance-premium-app/
 
-      # Production deployment
+      # ==========================================================
+      # DEPLOY PRODUCTION
+      # ==========================================================
       - name: Deploy to Production
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'cd /home/ubuntu/insurance-premium-app
 
-            cd /home/ubuntu/insurance-premium-app
+          if [ -f prod.pid ]; then
+            kill "$(cat prod.pid)" 2>/dev/null || true
+            rm -f prod.pid
+          fi
 
-            # Stop previous production instance only
-            if [ -f prod.pid ]; then
-              kill "$(cat prod.pid)" 2>/dev/null || true
-              rm -f prod.pid
-            fi
+          APP_PORT=8080 \
+          nohup java -jar insurance-premium-app-1.0.0.jar \
+            > application.log 2>&1 &
 
-            # Start Production on port 8080
-            APP_PORT=8080 \
-            nohup java -jar insurance-premium-app-1.0.0.jar \
-              > application.log 2>&1 &
+          echo $! > prod.pid
 
-            echo $! > prod.pid
+          sleep 10
 
-            sleep 10
+          echo "Production deployment completed"'
 
-            echo "Production deployment completed"
-
-EOF
-
-
-  # ============================================================
-  # PRODUCTION HEALTH CHECK
-  # ============================================================
-  production-health-check:
-
-    needs: deploy-production
-
-    runs-on: ubuntu-latest
-
-    steps:
-
+      # ==========================================================
+      # PRODUCTION HEALTH CHECK
+      # ==========================================================
       - name: Production Health Check
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
+          ssh \
+            -i ~/.ssh/github_actions_ec2 \
+            -o IdentitiesOnly=yes \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'curl --fail http://localhost:8080/health && \
+             curl --fail http://localhost:8080/premium'
 
-          echo "Checking Production Health endpoint..."
-
-          curl \
-            --fail \
-            --retry 5 \
-            --retry-delay 3 \
-            http://${EC2_HOST}:8080/health
-
-          echo ""
-
-          echo "Checking Production Premium endpoint..."
-
-          curl \
-            --fail \
-            --retry 5 \
-            --retry-delay 3 \
-            http://${EC2_HOST}:8080/premium
-
-          echo ""
-
-          echo "Production health check passed"
+          echo "Production health check passed."
