@@ -1,3 +1,4 @@
+```yaml
 name: Insurance Premium CI-CD
 
 on:
@@ -17,7 +18,6 @@ jobs:
   # BUILD AND TEST
   # ============================================================
   build-and-test:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -79,7 +79,6 @@ jobs:
   # DEPLOY TO UAT
   # ============================================================
   deploy-uat:
-
     needs: build-and-test
     runs-on: ubuntu-latest
 
@@ -97,6 +96,7 @@ jobs:
       - name: Configure SSH
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           mkdir -p ~/.ssh
 
@@ -104,79 +104,91 @@ jobs:
 
           chmod 600 ~/.ssh/github_actions_ec2
 
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
+          ssh-keyscan -H "$EC2_HOST" \
             >> ~/.ssh/known_hosts
 
       # ==========================================================
       # COPY APPLICATION TO EC2
       # ==========================================================
       - name: Copy Application to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           scp \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
             artifact/insurance-premium-app-1.0.0.jar \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/insurance-premium-app/
+            "$EC2_USER@$EC2_HOST:/home/ubuntu/insurance-premium-app/"
 
       # ==========================================================
       # DEPLOY UAT
       # ==========================================================
       - name: Deploy to UAT
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            'cd /home/ubuntu/insurance-premium-app
-
-          if [ -f uat.pid ]; then
-            kill "$(cat uat.pid)" 2>/dev/null || true
-            rm -f uat.pid
-          fi
-
-          APP_PORT=8081 \
-          nohup java -jar insurance-premium-app-1.0.0.jar \
-            > application-uat.log 2>&1 &
-
-          echo $! > uat.pid
-
-          sleep 10
-
-          echo "UAT deployment completed"'
+            "$EC2_USER@$EC2_HOST" \
+            "cd /home/ubuntu/insurance-premium-app && \
+             if [ -f uat.pid ]; then \
+               kill \$(cat uat.pid) 2>/dev/null || true; \
+               rm -f uat.pid; \
+             fi && \
+             APP_PORT=8081 nohup java -jar insurance-premium-app-1.0.0.jar \
+               > application-uat.log 2>&1 & \
+             echo \$! > uat.pid && \
+             sleep 10 && \
+             echo 'UAT deployment completed'"
 
       # ==========================================================
-      # UAT DEPLOYMENT VERIFICATION
+      # VERIFY UAT DEPLOYMENT
       # ==========================================================
       - name: Verify UAT Deployment
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            'curl --fail http://localhost:8081/health && \
-             curl --fail http://localhost:8081/premium'
+            "$EC2_USER@$EC2_HOST" \
+            "curl --fail http://localhost:8081/health && \
+             curl --fail http://localhost:8081/premium"
+
+          echo "UAT deployment verification passed."
 
 
   # ============================================================
   # UAT API TEST
   # ============================================================
   uat-test:
-
     needs: deploy-uat
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: UAT API Test
+      - name: Run UAT API Tests
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          echo "UAT API validation completed successfully."
+          ssh \
+            -i ~/.ssh/github_actions_ec2 \
+            -o IdentitiesOnly=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "BASE_URL=http://localhost:8081 bash /home/ubuntu/insurance-premium-app/tests/api-test.sh"
+
+          echo "UAT API tests passed."
 
 
   # ============================================================
-  # PRODUCTION DEPLOYMENT
+  # DEPLOY TO PRODUCTION
   # ============================================================
   deploy-production:
-
     needs: uat-test
     runs-on: ubuntu-latest
 
@@ -197,6 +209,7 @@ jobs:
       - name: Configure SSH
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           mkdir -p ~/.ssh
 
@@ -204,56 +217,60 @@ jobs:
 
           chmod 600 ~/.ssh/github_actions_ec2
 
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" \
+          ssh-keyscan -H "$EC2_HOST" \
             >> ~/.ssh/known_hosts
 
       # ==========================================================
       # COPY APPLICATION TO EC2
       # ==========================================================
       - name: Copy Application to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           scp \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
             artifact/insurance-premium-app-1.0.0.jar \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/insurance-premium-app/
+            "$EC2_USER@$EC2_HOST:/home/ubuntu/insurance-premium-app/"
 
       # ==========================================================
       # DEPLOY PRODUCTION
       # ==========================================================
       - name: Deploy to Production
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            'cd /home/ubuntu/insurance-premium-app
-
-          if [ -f prod.pid ]; then
-            kill "$(cat prod.pid)" 2>/dev/null || true
-            rm -f prod.pid
-          fi
-
-          APP_PORT=8080 \
-          nohup java -jar insurance-premium-app-1.0.0.jar \
-            > application.log 2>&1 &
-
-          echo $! > prod.pid
-
-          sleep 10
-
-          echo "Production deployment completed"'
+            "$EC2_USER@$EC2_HOST" \
+            "cd /home/ubuntu/insurance-premium-app && \
+             if [ -f prod.pid ]; then \
+               kill \$(cat prod.pid) 2>/dev/null || true; \
+               rm -f prod.pid; \
+             fi && \
+             APP_PORT=8080 nohup java -jar insurance-premium-app-1.0.0.jar \
+               > application.log 2>&1 & \
+             echo \$! > prod.pid && \
+             sleep 10 && \
+             echo 'Production deployment completed'"
 
       # ==========================================================
       # PRODUCTION HEALTH CHECK
       # ==========================================================
       - name: Production Health Check
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh \
             -i ~/.ssh/github_actions_ec2 \
             -o IdentitiesOnly=yes \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            'curl --fail http://localhost:8080/health && \
-             curl --fail http://localhost:8080/premium'
+            "$EC2_USER@$EC2_HOST" \
+            "curl --fail http://localhost:8080/health && \
+             curl --fail http://localhost:8080/premium"
 
           echo "Production health check passed."
+```
