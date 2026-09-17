@@ -138,7 +138,7 @@ jobs:
 
             echo "UAT deployment completed"
 
-            EOF
+EOF
 
 
   # ============================================================
@@ -251,7 +251,7 @@ jobs:
 
             echo "Production deployment completed"
 
-            EOF
+EOF
 
 
   # ============================================================
