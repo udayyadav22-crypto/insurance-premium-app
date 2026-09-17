@@ -13,12 +13,15 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <junit.version>5.10.2</junit.version>
+        <jacoco.version>0.8.13</jacoco.version>
+        <sonar.maven.version>5.2.0.4988</sonar.maven.version>
+        <dependency.check.version>12.1.9</dependency.check.version>
     </properties>
 
     <dependencies>
 
-        <!-- JUnit 5 for unit testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -29,23 +32,30 @@
     </dependencies>
 
     <build>
+
         <plugins>
 
-            <!-- Runs JUnit tests -->
+            <!-- Maven Compiler -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+            </plugin>
+
+            <!-- Unit Test -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
             </plugin>
 
-            <!-- JaCoCo code coverage -->
+            <!-- JaCoCo Code Coverage -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.13</version>
+                <version>${jacoco.version}</version>
 
                 <executions>
-
                     <execution>
                         <id>prepare-agent</id>
                         <goals>
@@ -55,23 +65,34 @@
 
                     <execution>
                         <id>report</id>
-                        <phase>verify</phase>
+                        <phase>test</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
                     </execution>
-
                 </executions>
             </plugin>
 
-            <!-- SonarCloud analysis -->
+            <!-- SonarCloud -->
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
-                <version>5.2.0.4988</version>
+                <version>${sonar.maven.version}</version>
             </plugin>
 
-            <!-- Creates executable JAR with Main-Class -->
+            <!-- OWASP Dependency-Check / SCA -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>${dependency.check.version}</version>
+
+                <configuration>
+                    <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                </configuration>
+            </plugin>
+
+            <!-- Create Executable JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -84,10 +105,10 @@
                         </manifest>
                     </archive>
                 </configuration>
-
             </plugin>
 
         </plugins>
+
     </build>
 
 </project>
