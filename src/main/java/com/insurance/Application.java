@@ -1,6 +1,5 @@
 package com.insurance;
 
-import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
@@ -29,8 +28,13 @@ public class Application {
         System.out.println("Nominee Allocation Valid: "
                 + nomineeService.isValidAllocation(nominees));
 
+        // Read application port from environment variable.
+        // Default port is 8080 for Production.
+        int port = Integer.parseInt(
+                System.getenv().getOrDefault("APP_PORT", "8080"));
+
         HttpServer server = HttpServer.create(
-                new InetSocketAddress(8080), 0);
+                new InetSocketAddress(port), 0);
 
         server.createContext("/health", exchange -> {
 
@@ -56,7 +60,10 @@ public class Application {
 
         server.start();
 
-        System.out.println("HTTP Server started on port 8080");
-        System.out.println("Health endpoint: http://localhost:8080/health");
+        System.out.println("HTTP Server started on port " + port);
+        System.out.println(
+                "Health endpoint: http://localhost:" + port + "/health");
     }
 }
+
+
